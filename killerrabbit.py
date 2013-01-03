@@ -156,7 +156,9 @@ class ControlServer(object):
         self.__command_dict = {
             '?': ("Show help", self.show_help),
             'q': ("Terminate application", self.terminate_application),
-            't': ("Toggle data forwarding", self.toggle_data_forwarding)
+            't': ("Toggle data forwarding", self.toggle_data_forwarding),
+            'ld': ("Change log level to DEBUG", self.set_debug_loglevel),
+            'li': ("Change log level to INFO", self.set_info_loglevel)
         }
 
     def main_loop(self):
@@ -225,6 +227,14 @@ class ControlServer(object):
                      self.__rabbit_server.forward_data)
         self.__rabbit_server.forward_data = not self.__rabbit_server.forward_data
 
+    def set_debug_loglevel(self):
+        logging.info("Changing log level to DEBUG")
+        logger.setLevel(logging.DEBUG)
+
+    def set_info_loglevel(self):
+        logging.info("Changing log level to INFO")
+        logger.setLevel(logging.INFO)
+
 
 if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)-15s %(message)s')
@@ -236,10 +246,12 @@ if __name__ == '__main__':
     server = TheServer('', 9090)
     try:
         server.start()
+        #server.join()
 
         c = ControlServer(server)
         c.main_loop()
 
+        # THIS DID NOT TERMINATE PROPERLY. WHY?
         server.join()
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt. Stopping server.")
