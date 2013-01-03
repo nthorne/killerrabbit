@@ -5,6 +5,7 @@ import pickle
 import socket
 import threading
 import binascii
+import logging
 
 
 # We'll pickle a list of numbers:
@@ -14,7 +15,6 @@ pickledList = pickle.dumps(someList)
 
 # Our thread class:
 class ClientThread(threading.Thread):
-    # Override Thread's __init__ method to accept the parameters needed:
     def __init__(self, channel, details):
 
         self.channel = channel
@@ -22,37 +22,40 @@ class ClientThread(threading.Thread):
         threading.Thread.__init__(self)
 
     def run(self):
-        #print 'Received connection:', self.details[0]
-        #self.channel.send(pickledList)
-        #for x in xrange(10):
-            #print self.channel.recv(1)
-        #self.channel.close()
-        #print 'Closed connection:', self.details[0]
-
         try:
             while True:
                 byte = self.channel.recv(1)
 
                 if not byte:
-                    print "received empty string. closing channel"
+                    logging.debug("Received empty string. Closing channel.")
                     self.channel.close()
 
-                print "received 0x%s" % binascii.hexlify(byte)
+                logging.debug("Received 0x%s" % binascii.hexlify(byte))
                 self.channel.send(byte)
-        except:
+        except Exception, e:
+            logging.debug("%s" % e)
             self.channel.close()
 
-# Set up the server:
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server.bind(('', 55132))
-server.listen(5)
+if __name__ == '__main__':
+    # Set up logging
+    logging.basicConfig(format='%(asctime)-15s %(message)s')
 
-# Have the server serve "forever":
-try:
-    while True:
-        channel, details = server.accept()
-        c = ClientThread(channel, details)
-        c.start()
-        c.join()
-except KeyboardInterrupt:
-    sys.exit(1)
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Set up the server:
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(('', 55132))
+    server.listen(5)
+
+    logging.info("Starting server")
+
+    # Have the server serve "forever":
+    try:
+        while True:
+            channel, details = server.accept()
+            c = ClientThread(channel, details)
+            c.start()
+            c.join()
+    except KeyboardInterrupt:
+        sys.exit(1)

@@ -51,6 +51,8 @@ try:
 
     socket.setdefaulttimeout(5)
 
+    logging.info("Starting client..")
+
     while True:
         c = ConnectionThread()
         c.start()
