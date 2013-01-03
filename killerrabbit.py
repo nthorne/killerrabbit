@@ -18,6 +18,8 @@ import threading
 
 
 #forward_to = ('10.160.153.75', 55132)
+# TODO: This should be default, to be able to be ovveriden by means
+#  of command line argument (argparse)
 forward_to = ('localhost', 55132)
 
 
@@ -234,12 +236,10 @@ if __name__ == '__main__':
     server = TheServer('', 9090)
     try:
         server.start()
-        #server.join()
 
         c = ControlServer(server)
         c.main_loop()
 
-        # THIS DID NOT TERMINATE PROPERLY. WHY?
         server.join()
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt. Stopping server.")
