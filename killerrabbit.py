@@ -47,6 +47,8 @@ class TheServer(threading.Thread):
     def __init__(self, host, port, delay=0.0001, buffer_size=4096, timeout=5):
         super(TheServer, self).__init__()
 
+        logging.info("Server running at %s:%d" % (host, port))
+
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind((host, port))
@@ -145,7 +147,8 @@ class ControlServer(object):
                  delay=0.0001):
         super(ControlServer, self).__init__()
 
-        logging.info("Starting control server")
+        logging.info("Starting control server at %s:%d" %
+                     (control_host, control_port))
 
         self.__control_host = control_host
         self.__control_port = control_port
@@ -242,7 +245,6 @@ if __name__ == '__main__':
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    logger.info("Starting server")
     server = TheServer('', 9090)
     try:
         server.start()
