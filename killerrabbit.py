@@ -17,10 +17,10 @@ import socket
 import threading
 
 
-#forward_to = ('10.160.153.75', 55132)
+#FORWARD_TO = ('10.160.153.75', 55132)
 # TODO: This should be default, to be able to be ovveriden by means
 #  of command line argument (argparse)
-forward_to = ('localhost', 55132)
+FORWARD_TO = ('localhost', 55132)
 
 
 class Forward:
@@ -28,15 +28,14 @@ class Forward:
         self.forward = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def start(self, host, port):
-        logging.info(
-            "Connecting forwarding proxy to %s:%s" % (host, port))
+        """ Called upon to connect the forwarding proxy to the remote server."""
+        logging.info("Connecting forwarding proxy to %s:%s", host, port)
 
         try:
             self.forward.connect((host, port))
             return self.forward
-        except Exception, e:
-            logging.warning(
-                "Encountered exception %s in forwarding proxy" % e)
+        except Exception, exc:
+            logging.warning("Encountered exception %s in forwarding proxy", exc)
             return False
 
 
@@ -47,7 +46,7 @@ class TheServer(threading.Thread):
     def __init__(self, host, port, delay=0.0001, buffer_size=4096, timeout=5):
         super(TheServer, self).__init__()
 
-        logging.info("Server running at %s:%d" % (host, port))
+        logging.info("Server running at %s:%d", host, port)
 
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -63,12 +62,15 @@ class TheServer(threading.Thread):
 
         self.timeout = timeout
 
+        self.s = None
+        self.data = None
+
     def run(self):
         self.input_list.append(self.server)
         while not self.terminate:
             time.sleep(self.delay)
-            ss = select.select
-            inputready, outputready, exceptready = ss(self.input_list, [], [], self.timeout)
+            inputready, _, _ = select.select(self.input_list, [], [],
+                                             self.timeout)
             for self.s in inputready:
                 if self.s == self.server:
                     self.on_accept()
@@ -85,26 +87,36 @@ class TheServer(threading.Thread):
                     self.on_close()
 
     def on_accept(self):
-        forward = Forward().start(forward_to[0], forward_to[1])
+        """ Called upon when accepting a client connection. Creates the
+        forwarding proxy type, and adding it and the client socket to
+        the input_list, and setting up the channels. """
+
+        forward = Forward().start(FORWARD_TO[0], FORWARD_TO[1])
         clientsock, clientaddr = self.server.accept()
         if forward:
-            logging.info("%s:%d has connected" % clientaddr)
+            logging.info("%s:%d has connected", clientaddr[0], clientaddr[1])
 
             self.input_list.append(clientsock)
             self.input_list.append(forward)
             self.channel[clientsock] = forward
             self.channel[forward] = clientsock
         else:
-            logging.warning("Cannot connect to %s:%d" % forward_to)
-            logging.warning("Closing connection with %s:%d" % clientaddr)
+            logging.warning("Cannot connect to %s:%d", FORWARD_TO[0],
+                            FORWARD_TO[1])
+            logging.warning("Closing connection with %s:%d", clientaddr[0],
+                            clientaddr[1])
             clientsock.close()
 
     def on_close(self):
+        """ Called upon when a client-server connection is to be closed. The
+        sockets are closed and removed from the socket list. The associated
+        channels are also destroyed. """
+
         try:
-            logging.info("%s:%d has disconnected" % self.s.getpeername())
-        except socket.error, e:
-            logging.warning("Encountered %s when trying to close socket" % e)
-            pass
+            logging.info("%s:%d has disconnected", self.s.getpeername()[0],
+                         self.s.getpeername()[1])
+        except socket.error, exc:
+            logging.warning("Encountered %s when trying to close socket", exc)
 
         if not self.forward_data:
             logging.debug("Connection strangled. Ignoring close request.")
@@ -123,32 +135,40 @@ class TheServer(threading.Thread):
             self.channel[out].close()  # equivalent to do self.s.close()
             # close the connection with remote server
             del self.channel[out]
-        except (KeyError, ValueError), e:
-            logging.warning("%s when attempting to close connections" % e)
+        except (KeyError, ValueError), exc:
+            logging.warning("%s when attempting to close connections", exc)
 
         try:
             self.channel[self.s].close()
             # delete both objects from channel dict
             del self.channel[self.s]
-        except (KeyError, ValueError), e:
-            logging.warning("%s when attempting to delete input descriptor" % e)
+        except (KeyError, ValueError), exc:
+            logging.warning("%s when attempting to delete input descriptor",
+                            exc)
 
     def on_recv(self):
+        """ Called upon when data is received on a socket. Forwards data to the
+        intended recipient unless forward_data is False. """
+
         data = self.data
-        logging.debug("Data from %s (strangling connection after %d messages) :\n%s\n" % (
-            self.s.getpeername(), self.forward_data, binascii.hexlify(data)))
+        logging.debug("Data from %s:\n%s\n",
+                      self.s.getpeername()[0], self.s.getpeername()[1],
+                      binascii.hexlify(data))
 
         if self.forward_data:
             self.channel[self.s].send(data)
 
 
 class ControlServer(object):
-    def __init__(self, rabbit_server, control_host='', control_port=9089,
-                 delay=0.0001):
+    """ This type is used to control the behavior of the application,
+    e.g. toggling data forwarding and terminating the application. Commands
+    are sent to the ControlServer over a socket. """
+
+    def __init__(self, rabbit_server, control_host='', control_port=9089):
         super(ControlServer, self).__init__()
 
-        logging.info("Starting control server at %s:%d" %
-                     (control_host, control_port))
+        logging.info("Starting control server at %s:%d", control_host,
+                     control_port)
 
         self.__control_host = control_host
         self.__control_port = control_port
@@ -165,13 +185,17 @@ class ControlServer(object):
         }
 
     def main_loop(self):
+        """ The main loop of the server. Opens a listening socket on which
+        control commands can be sent, and once a control session has been
+        established, the command loop is entered. """
+
         try:
             self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server.bind((self.__control_host, self.__control_port))
             self.server.listen(200)
-        except Exception, e:
-            logging.warning("Encountered exception in control object: %s" % e)
+        except Exception, exc:
+            logging.warning("Encountered exception in control object: %s", exc)
             self.server.terminate = True
             return
 
@@ -188,73 +212,95 @@ class ControlServer(object):
                 self.send("%s - no such command" % command)
 
     def greet(self):
-        self.send("Control session established (enter ? for available commands)")
+        """ Greet client upon connection to control server. """
+
+        self.send("Control session established (? for available commands)")
 
     def send(self, msg):
+        """ Send newline terminated message to the remote client. """
+
         try:
             self.__channel.send("%s\n" % msg)
-        except:
+        except Exception:
             pass
 
     def show_prompt(self):
+        """ Send the prompt to the remote client when awaiting input. """
+
         try:
             self.__channel.send("> ")
-        except:
+        except Exception:
             pass
 
     def read_stripped_lowercased(self):
+        """ Read input from remote client, strip it and lowercase it. """
         try:
             self.show_prompt()
             return self.__channel.recv(1024).strip().lower()
-        except:
+        except Exception:
             pass
 
     def close(self):
+        """ Close the control session channel. """
+
         try:
             self.__channel.close()
-        except:
+        except Exception:
             pass
 
     def show_help(self):
+        """ Show the help to the remote client. The help message is built by
+        iterating the command map, and generating the help by combining the
+        key with the help string associated with each dictionary item. """
+
         for command in self.__command_dict.keys():
             self.send("%s - %s" % (command, self.__command_dict[command][0]))
 
     def terminate_application(self):
+        """ Terminate the application, by telling the main server to exit from
+        its main loop, and by flagging that the control server also should exit
+        from its main loop. """
+
         logging.info("Terminating apllication..")
         self.__rabbit_server.terminate = True
         self.close()
         self.terminate = True
 
     def toggle_data_forwarding(self):
-        logging.info("Toggling data forwarding (was %s)" %
+        """ Toggle data forwarding, i.e. tell the main server that no data shall
+        be forwarded from the sending party to the receiving party. """
+
+        logging.info("Toggling data forwarding (was %s)",
                      self.__rabbit_server.forward_data)
         self.__rabbit_server.forward_data = not self.__rabbit_server.forward_data
 
     def set_debug_loglevel(self):
+        """ Change application log level to DEBUG. """
+
         logging.info("Changing log level to DEBUG")
-        logger.setLevel(logging.DEBUG)
+        LOGGER.setLevel(logging.DEBUG)
 
     def set_info_loglevel(self):
+        """ Change application log level to INFO. """
+
         logging.info("Changing log level to INFO")
-        logger.setLevel(logging.INFO)
+        LOGGER.setLevel(logging.INFO)
 
 
 if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)-15s %(message)s')
 
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    LOGGER = logging.getLogger()
+    LOGGER.setLevel(logging.INFO)
 
-    server = TheServer('', 9090)
+    SERVER = TheServer('', 9090)
     try:
-        server.start()
-        #server.join()
+        SERVER.start()
 
-        c = ControlServer(server)
-        c.main_loop()
+        CONTROL = ControlServer(SERVER)
+        CONTROL.main_loop()
 
-        # THIS DID NOT TERMINATE PROPERLY. WHY?
-        server.join()
+        SERVER.join()
     except KeyboardInterrupt:
-        logger.info("Keyboard interrupt. Stopping server.")
+        logging.info("Keyboard interrupt. Stopping server.")
         sys.exit(1)
