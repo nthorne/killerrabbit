@@ -57,7 +57,7 @@ class TheServer(threading.Thread):
         self.delay = delay
         self.buffer_size = buffer_size
 
-        self.forward_data = True
+        self.forwarding = True
 
         self.terminate = False
 
@@ -120,7 +120,7 @@ class TheServer(threading.Thread):
         except socket.error, exc:
             logging.warning("Encountered %s when trying to close socket", exc)
 
-        if not self.forward_data:
+        if not self.forwarding:
             logging.debug("Connection strangled. Ignoring close request.")
             return
 
@@ -150,7 +150,7 @@ class TheServer(threading.Thread):
 
     def on_recv(self):
         """ Called upon when data is received on a socket. Forwards data to the
-        intended recipient unless forward_data is False. """
+        intended recipient unless forwarding is False. """
 
         data = self.data
         logging.debug("Data from %s:\n%s\n",
@@ -158,7 +158,7 @@ class TheServer(threading.Thread):
                       self.input_descriptor.getpeername()[1],
                       binascii.hexlify(data))
 
-        if self.forward_data:
+        if self.forwarding:
             self.channel[self.input_descriptor].send(data)
 
 
@@ -277,8 +277,8 @@ class ControlServer(object):
         be forwarded from the sending party to the receiving party. """
 
         logging.info("Toggling data forwarding (was %s)",
-                     self.__rabbit_server.forward_data)
-        self.__rabbit_server.forward_data = not self.__rabbit_server.forward_data
+                     self.__rabbit_server.forwarding)
+        self.__rabbit_server.forwarding = not self.__rabbit_server.forwarding
 
     @staticmethod
     def set_debug_loglevel():
