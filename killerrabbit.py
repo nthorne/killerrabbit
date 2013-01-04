@@ -23,7 +23,11 @@ import threading
 FORWARD_TO = ('localhost', 55132)
 
 
+# TODO: Drop this type - it provides no real value
 class Forward:
+    """ This type wraps socket.connect to be able to, in a convenient way
+    determine if connection to a remote host succeeded. """
+
     def __init__(self):
         self.forward = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -34,12 +38,14 @@ class Forward:
         try:
             self.forward.connect((host, port))
             return self.forward
-        except Exception, exc:
-            logging.warning("Encountered exception %s in forwarding proxy", exc)
+        except socket.error, exc:
+            logging.warning("Forwarding proxy: %s", exc)
             return False
 
 
 class TheServer(threading.Thread):
+    """ This type implements the proxy server. """
+
     input_list = []
     channel = {}
 
@@ -62,7 +68,7 @@ class TheServer(threading.Thread):
 
         self.timeout = timeout
 
-        self.s = None
+        self.input_descriptor = None
         self.data = None
 
     def run(self):
@@ -71,19 +77,19 @@ class TheServer(threading.Thread):
             time.sleep(self.delay)
             inputready, _, _ = select.select(self.input_list, [], [],
                                              self.timeout)
-            for self.s in inputready:
-                if self.s == self.server:
+            for self.input_descriptor in inputready:
+                if self.input_descriptor == self.server:
                     self.on_accept()
                     break
 
                 try:
-                    self.data = self.s.recv(self.buffer_size)
+                    self.data = self.input_descriptor.recv(self.buffer_size)
 
                     if len(self.data) == 0:
                         self.on_close()
                     else:
                         self.on_recv()
-                except Exception:
+                except socket.error:
                     self.on_close()
 
     def on_accept(self):
@@ -113,8 +119,9 @@ class TheServer(threading.Thread):
         channels are also destroyed. """
 
         try:
-            logging.info("%s:%d has disconnected", self.s.getpeername()[0],
-                         self.s.getpeername()[1])
+            logging.info("%s:%d has disconnected",
+                         self.input_descriptor.getpeername()[0],
+                         self.input_descriptor.getpeername()[1])
         except socket.error, exc:
             logging.warning("Encountered %s when trying to close socket", exc)
 
@@ -123,25 +130,25 @@ class TheServer(threading.Thread):
             return
 
         try:
-            self.input_list.remove(self.s)
+            self.input_list.remove(self.input_descriptor)
         except ValueError:
             logging.warning("ValueError when removing file descriptor.")
 
         try:
-            out = self.channel[self.s]
-            self.input_list.remove(self.channel[self.s])
+            out = self.channel[self.input_descriptor]
+            self.input_list.remove(self.channel[self.input_descriptor])
 
             # close the connection with client
-            self.channel[out].close()  # equivalent to do self.s.close()
+            self.channel[out].close()
             # close the connection with remote server
             del self.channel[out]
         except (KeyError, ValueError), exc:
             logging.warning("%s when attempting to close connections", exc)
 
         try:
-            self.channel[self.s].close()
+            self.channel[self.input_descriptor].close()
             # delete both objects from channel dict
-            del self.channel[self.s]
+            del self.channel[self.input_descriptor]
         except (KeyError, ValueError), exc:
             logging.warning("%s when attempting to delete input descriptor",
                             exc)
@@ -152,11 +159,12 @@ class TheServer(threading.Thread):
 
         data = self.data
         logging.debug("Data from %s:\n%s\n",
-                      self.s.getpeername()[0], self.s.getpeername()[1],
+                      self.input_descriptor.getpeername()[0],
+                      self.input_descriptor.getpeername()[1],
                       binascii.hexlify(data))
 
         if self.forward_data:
-            self.channel[self.s].send(data)
+            self.channel[self.input_descriptor].send(data)
 
 
 class ControlServer(object):
@@ -184,6 +192,9 @@ class ControlServer(object):
             'li': ("Change log level to INFO", self.set_info_loglevel)
         }
 
+        self.__channel = None
+        self.server = None
+
     def main_loop(self):
         """ The main loop of the server. Opens a listening socket on which
         control commands can be sent, and once a control session has been
@@ -194,12 +205,12 @@ class ControlServer(object):
             self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server.bind((self.__control_host, self.__control_port))
             self.server.listen(200)
-        except Exception, exc:
-            logging.warning("Encountered exception in control object: %s", exc)
+        except socket.error, exc:
+            logging.warning("ControlServer main loop: %s", exc)
             self.server.terminate = True
             return
 
-        self.__channel, details = self.server.accept()
+        self.__channel, _ = self.server.accept()
 
         self.greet()
 
@@ -221,7 +232,7 @@ class ControlServer(object):
 
         try:
             self.__channel.send("%s\n" % msg)
-        except Exception:
+        except socket.error:
             pass
 
     def show_prompt(self):
@@ -229,7 +240,7 @@ class ControlServer(object):
 
         try:
             self.__channel.send("> ")
-        except Exception:
+        except socket.error:
             pass
 
     def read_stripped_lowercased(self):
@@ -237,7 +248,7 @@ class ControlServer(object):
         try:
             self.show_prompt()
             return self.__channel.recv(1024).strip().lower()
-        except Exception:
+        except socket.error:
             pass
 
     def close(self):
@@ -245,7 +256,7 @@ class ControlServer(object):
 
         try:
             self.__channel.close()
-        except Exception:
+        except socket.error:
             pass
 
     def show_help(self):
@@ -274,13 +285,15 @@ class ControlServer(object):
                      self.__rabbit_server.forward_data)
         self.__rabbit_server.forward_data = not self.__rabbit_server.forward_data
 
-    def set_debug_loglevel(self):
+    @staticmethod
+    def set_debug_loglevel():
         """ Change application log level to DEBUG. """
 
         logging.info("Changing log level to DEBUG")
         LOGGER.setLevel(logging.DEBUG)
 
-    def set_info_loglevel(self):
+    @staticmethod
+    def set_info_loglevel():
         """ Change application log level to INFO. """
 
         logging.info("Changing log level to INFO")
