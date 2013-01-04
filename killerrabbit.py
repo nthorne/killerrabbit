@@ -23,7 +23,7 @@ import threading
 FORWARD_TO = ('localhost', 55132)
 
 
-def create_socket(host, port):
+def connect_socket(host, port):
     """ Create a socket connected to host:port, and return the socket,
     or None if the connection attempt fails. """
 
@@ -38,14 +38,14 @@ def create_socket(host, port):
         return None
 
 
-class TheServer(threading.Thread):
+class ProxyServer(threading.Thread):
     """ This type implements the proxy server. """
 
     input_list = []
     channel = {}
 
     def __init__(self, host, port, delay=0.0001, buffer_size=4096, timeout=5):
-        super(TheServer, self).__init__()
+        super(ProxyServer, self).__init__()
 
         logging.info("Server running at %s:%d", host, port)
 
@@ -56,15 +56,11 @@ class TheServer(threading.Thread):
 
         self.delay = delay
         self.buffer_size = buffer_size
+        self.timeout = timeout
 
         self.forwarding = True
 
         self.terminate = False
-
-        self.timeout = timeout
-
-        self.input_descriptor = None
-        self.data = None
 
     def run(self):
         self.input_list.append(self.server)
@@ -72,27 +68,27 @@ class TheServer(threading.Thread):
             time.sleep(self.delay)
             inputready, _, _ = select.select(self.input_list, [], [],
                                              self.timeout)
-            for self.input_descriptor in inputready:
-                if self.input_descriptor == self.server:
+            for input_descriptor in inputready:
+                if input_descriptor == self.server:
                     self.on_accept()
                     break
 
                 try:
-                    self.data = self.input_descriptor.recv(self.buffer_size)
+                    data = input_descriptor.recv(self.buffer_size)
 
-                    if len(self.data) == 0:
-                        self.on_close()
+                    if len(data) == 0:
+                        self.on_close(input_descriptor)
                     else:
-                        self.on_recv()
+                        self.on_recv(input_descriptor, data)
                 except socket.error:
-                    self.on_close()
+                    self.on_close(input_descriptor)
 
     def on_accept(self):
         """ Called upon when accepting a client connection. Creates the
         forwarding proxy type, and adding it and the client socket to
         the input_list, and setting up the channels. """
 
-        forward = create_socket(FORWARD_TO[0], FORWARD_TO[1])
+        forward = connect_socket(FORWARD_TO[0], FORWARD_TO[1])
         clientsock, clientaddr = self.server.accept()
         if forward:
             logging.info("%s:%d has connected", clientaddr[0], clientaddr[1])
@@ -108,15 +104,15 @@ class TheServer(threading.Thread):
                             clientaddr[1])
             clientsock.close()
 
-    def on_close(self):
+    def on_close(self, sock):
         """ Called upon when a client-server connection is to be closed. The
         sockets are closed and removed from the socket list. The associated
         channels are also destroyed. """
 
         try:
             logging.info("%s:%d has disconnected",
-                         self.input_descriptor.getpeername()[0],
-                         self.input_descriptor.getpeername()[1])
+                         sock.getpeername()[0],
+                         sock.getpeername()[1])
         except socket.error, exc:
             logging.warning("Encountered %s when trying to close socket", exc)
 
@@ -125,13 +121,13 @@ class TheServer(threading.Thread):
             return
 
         try:
-            self.input_list.remove(self.input_descriptor)
+            self.input_list.remove(sock)
         except ValueError:
             logging.warning("ValueError when removing file descriptor.")
 
         try:
-            out = self.channel[self.input_descriptor]
-            self.input_list.remove(self.channel[self.input_descriptor])
+            out = self.channel[sock]
+            self.input_list.remove(self.channel[sock])
 
             # close the connection with client
             self.channel[out].close()
@@ -141,25 +137,24 @@ class TheServer(threading.Thread):
             logging.warning("%s when attempting to close connections", exc)
 
         try:
-            self.channel[self.input_descriptor].close()
+            self.channel[sock].close()
             # delete both objects from channel dict
-            del self.channel[self.input_descriptor]
+            del self.channel[sock]
         except (KeyError, ValueError), exc:
             logging.warning("%s when attempting to delete input descriptor",
                             exc)
 
-    def on_recv(self):
-        """ Called upon when data is received on a socket. Forwards data to the
-        intended recipient unless forwarding is False. """
+    def on_recv(self, sock, data):
+        """ Called upon when data is received on socket sock. Forwards data to
+        the intended recipient unless forwarding is False. """
 
-        data = self.data
         logging.debug("Data from %s:\n%s\n",
-                      self.input_descriptor.getpeername()[0],
-                      self.input_descriptor.getpeername()[1],
+                      sock.getpeername()[0],
+                      sock.getpeername()[1],
                       binascii.hexlify(data))
 
         if self.forwarding:
-            self.channel[self.input_descriptor].send(data)
+            self.channel[sock].send(data)
 
 
 class ControlServer(object):
@@ -301,7 +296,7 @@ if __name__ == '__main__':
     LOGGER = logging.getLogger()
     LOGGER.setLevel(logging.INFO)
 
-    SERVER = TheServer('', 9090)
+    SERVER = ProxyServer('', 9090)
     try:
         SERVER.start()
 
