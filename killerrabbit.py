@@ -23,21 +23,6 @@ import threading
 FORWARD_TO = ('localhost', 55132)
 
 
-def connect_socket(host, port):
-    """ Create a socket connected to host:port, and return the socket,
-    or None if the connection attempt fails. """
-
-    forward = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    logging.info("Connecting to %s:%s", host, port)
-
-    try:
-        forward.connect((host, port))
-        return forward
-    except socket.error, exc:
-        logging.warning("Forwarding proxy: %s", exc)
-        return None
-
-
 class ProxyServer(threading.Thread):
     """ This type implements the proxy server. """
 
@@ -88,7 +73,7 @@ class ProxyServer(threading.Thread):
         forwarding proxy type, and adding it and the client socket to
         the input_list, and setting up the channels. """
 
-        forward = connect_socket(FORWARD_TO[0], FORWARD_TO[1])
+        forward = self.connect_socket(FORWARD_TO[0], FORWARD_TO[1])
         clientsock, clientaddr = self.server.accept()
         if forward:
             logging.info("%s:%d has connected", clientaddr[0], clientaddr[1])
@@ -155,6 +140,21 @@ class ProxyServer(threading.Thread):
 
         if self.forwarding:
             self.channel[sock].send(data)
+
+    @staticmethod
+    def connect_socket(host, port):
+        """ Create a socket connected to host:port, and return the socket,
+        or None if the connection attempt fails. """
+
+        forward = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        logging.info("Connecting to %s:%s", host, port)
+
+        try:
+            forward.connect((host, port))
+            return forward
+        except socket.error, exc:
+            logging.warning("Forwarding proxy: %s", exc)
+            return None
 
 
 class ControlServer(object):
