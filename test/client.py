@@ -33,10 +33,10 @@ class ConnectionThread(threading.Thread):
             try:
                 client.send(chr(x))
                 y = client.recv(1)
+                logging.debug("  (%d->, ->%d)" % (x, ord(y)))
             except:
                 break
 
-            logging.debug("  (%d->, ->%d)" % (x, ord(y)))
             assert(chr(x) == y)
 
         logging.debug("Session finished. Closing channel.")
