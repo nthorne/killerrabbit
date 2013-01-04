@@ -23,24 +23,19 @@ import threading
 FORWARD_TO = ('localhost', 55132)
 
 
-# TODO: Drop this type - it provides no real value
-class Forward:
-    """ This type wraps socket.connect to be able to, in a convenient way
-    determine if connection to a remote host succeeded. """
+def create_socket(host, port):
+    """ Create a socket connected to host:port, and return the socket,
+    or None if the connection attempt fails. """
 
-    def __init__(self):
-        self.forward = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    forward = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    logging.info("Connecting to %s:%s", host, port)
 
-    def start(self, host, port):
-        """ Called upon to connect the forwarding proxy to the remote server."""
-        logging.info("Connecting forwarding proxy to %s:%s", host, port)
-
-        try:
-            self.forward.connect((host, port))
-            return self.forward
-        except socket.error, exc:
-            logging.warning("Forwarding proxy: %s", exc)
-            return False
+    try:
+        forward.connect((host, port))
+        return forward
+    except socket.error, exc:
+        logging.warning("Forwarding proxy: %s", exc)
+        return None
 
 
 class TheServer(threading.Thread):
@@ -97,7 +92,7 @@ class TheServer(threading.Thread):
         forwarding proxy type, and adding it and the client socket to
         the input_list, and setting up the channels. """
 
-        forward = Forward().start(FORWARD_TO[0], FORWARD_TO[1])
+        forward = create_socket(FORWARD_TO[0], FORWARD_TO[1])
         clientsock, clientaddr = self.server.accept()
         if forward:
             logging.info("%s:%d has connected", clientaddr[0], clientaddr[1])
