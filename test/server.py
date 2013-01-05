@@ -1,20 +1,18 @@
 #!/usr/bin/env python
+
+""" This application, which is used to test killerrabbit, implements an echo
+SERVER. """
+import binascii
 import sys
 
-import pickle
+import logging
 import socket
 import threading
-import binascii
-import logging
 
 
-# We'll pickle a list of numbers:
-someList = [1, 2, 7, 9, 0]
-pickledList = pickle.dumps(someList)
-
-
-# Our thread class:
 class ClientThread(threading.Thread):
+    """ This type implements the echo SERVER. """
+
     def __init__(self, channel, details):
 
         self.channel = channel
@@ -30,32 +28,29 @@ class ClientThread(threading.Thread):
                     logging.debug("Received empty string. Closing channel.")
                     self.channel.close()
 
-                logging.debug("Received 0x%s" % binascii.hexlify(byte))
+                logging.debug("Received 0x%s", binascii.hexlify(byte))
                 self.channel.send(byte)
-        except Exception, e:
-            logging.debug("%s" % e)
+        except Exception, exc:
+            logging.debug("%s", exc)
             self.channel.close()
 
 if __name__ == '__main__':
-    # Set up logging
     logging.basicConfig(format='%(asctime)-15s %(message)s')
 
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    LOGGER = logging.getLogger()
+    LOGGER.setLevel(logging.INFO)
 
-    # Set up the server:
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(('', 55132))
-    server.listen(5)
+    SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    SERVER.bind(('', 55132))
+    SERVER.listen(5)
 
     logging.info("Starting server")
 
-    # Have the server serve "forever":
     try:
         while True:
-            channel, details = server.accept()
-            c = ClientThread(channel, details)
-            c.start()
-            c.join()
+            CHANNEL, DETAILS = SERVER.accept()
+            CLIENT = ClientThread(CHANNEL, DETAILS)
+            CLIENT.start()
+            CLIENT.join()
     except KeyboardInterrupt:
         sys.exit(1)
