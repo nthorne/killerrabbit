@@ -316,6 +316,8 @@ def parse_arguments():
                         help="Listening port for proxied connections.")
     parser.add_argument("--control", type=int, default=9089,
                         help="Control session port")
+    parser.add_argument("--log", type=str, default=None,
+                        help="Log to file rather than stdout")
 
     return parser.parse_args()
 
@@ -323,7 +325,8 @@ def parse_arguments():
 if __name__ == '__main__':
     ARGS = parse_arguments()
 
-    logging.basicConfig(format='%(asctime)-15s %(message)s')
+    logging.basicConfig(format='%(asctime)-15s %(message)s',
+                        filename=ARGS.log)
 
     LOGGER = logging.getLogger()
     LOGGER.setLevel(logging.INFO)
