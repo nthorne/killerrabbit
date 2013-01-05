@@ -268,7 +268,7 @@ class ControlServer(object):
         iterating the command map, and generating the help by combining the
         key with the help string associated with each dictionary item. """
 
-        for command in self.__command_dict.keys():
+        for command in sorted(self.__command_dict.keys()):
             self.send("%s - %s" % (command, self.__command_dict[command][0]))
 
     def terminate_application(self):
