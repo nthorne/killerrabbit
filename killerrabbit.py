@@ -147,7 +147,7 @@ class ProxyServer(threading.Thread):
         """ Called upon when data is received on socket sock. Forwards data to
         the intended recipient unless forwarding is False. """
 
-        logging.debug("Data from %s:\n%s\n",
+        logging.debug("%s:%d: %s",
                       sock.getpeername()[0],
                       sock.getpeername()[1],
                       binascii.hexlify(data))
