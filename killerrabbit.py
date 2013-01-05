@@ -24,21 +24,15 @@ This proxy basically provides data inspection as well as low-level
 manipulation of the streams (e.g. connection termination, dropping
 messages).
 """
-
 import binascii
 import select
 import sys
 import time
 
+import argparse
 import logging
 import socket
 import threading
-
-
-#FORWARD_TO = ('10.160.153.75', 55132)
-# TODO: This should be default, to be able to be ovveriden by means
-#  of command line argument (argparse)
-FORWARD_TO = ('localhost', 55132)
 
 
 class ProxyServer(threading.Thread):
@@ -47,14 +41,16 @@ class ProxyServer(threading.Thread):
     input_list = []
     channel = {}
 
-    def __init__(self, host, port, delay=0.0001, buffer_size=4096, timeout=5):
+    def __init__(self, args, delay=0.0001, buffer_size=4096, timeout=5):
         super(ProxyServer, self).__init__()
 
-        logging.info("Server running at %s:%d", host, port)
+        logging.info("Server running at %s:%d", '', args.listen)
+
+        self.args = args
 
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server.bind((host, port))
+        self.server.bind(('', args.listen))
         self.server.listen(200)
 
         self.delay = delay
@@ -91,7 +87,7 @@ class ProxyServer(threading.Thread):
         forwarding proxy type, and adding it and the client socket to
         the input_list, and setting up the channels. """
 
-        forward = self.connect_socket(FORWARD_TO[0], FORWARD_TO[1])
+        forward = self.connect_socket(self.args.HOST, self.args.PORT)
         clientsock, clientaddr = self.server.accept()
         if forward:
             logging.info("%s:%d has connected", clientaddr[0], clientaddr[1])
@@ -101,8 +97,8 @@ class ProxyServer(threading.Thread):
             self.channel[clientsock] = forward
             self.channel[forward] = clientsock
         else:
-            logging.warning("Cannot connect to %s:%d", FORWARD_TO[0],
-                            FORWARD_TO[1])
+            logging.warning("Cannot connect to %s:%d", self.args.HOST,
+                            self.args.PORT)
             logging.warning("Closing connection with %s:%d", clientaddr[0],
                             clientaddr[1])
             clientsock.close()
@@ -180,14 +176,14 @@ class ControlServer(object):
     e.g. toggling data forwarding and terminating the application. Commands
     are sent to the ControlServer over a socket. """
 
-    def __init__(self, rabbit_server, control_host='', control_port=9089):
+    def __init__(self, rabbit_server, args):
         super(ControlServer, self).__init__()
 
-        logging.info("Starting control server at %s:%d", control_host,
-                     control_port)
+        logging.info("Starting control server at %s:%d", '',
+                     args.control)
 
-        self.__control_host = control_host
-        self.__control_port = control_port
+        self.__control_host = ''
+        self.__control_port = args.control
         self.__rabbit_server = rabbit_server
 
         self.terminate = False
@@ -308,17 +304,35 @@ class ControlServer(object):
         LOGGER.setLevel(logging.INFO)
 
 
+def parse_arguments():
+    """ Parse command line arguments. """
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("HOST",
+                        help="Remote host address")
+    parser.add_argument("PORT", type=int,
+                        help="Remote host port")
+    parser.add_argument("--listen", type=int, default=9090,
+                        help="Listening port for proxied connections.")
+    parser.add_argument("--control", type=int, default=9089,
+                        help="Control session port")
+
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
+    ARGS = parse_arguments()
+
     logging.basicConfig(format='%(asctime)-15s %(message)s')
 
     LOGGER = logging.getLogger()
     LOGGER.setLevel(logging.INFO)
 
-    SERVER = ProxyServer('', 9090)
+    SERVER = ProxyServer(ARGS)
     try:
         SERVER.start()
 
-        CONTROL = ControlServer(SERVER)
+        CONTROL = ControlServer(SERVER, ARGS)
         CONTROL.main_loop()
 
         SERVER.join()
